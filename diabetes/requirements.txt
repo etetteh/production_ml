@@ -1,0 +1,9 @@
+pip
+scikit-learn
+pandas
+numpy
+fire
+wget
+optuna
+plotly
+kaleido
