@@ -36,11 +36,11 @@ For users with no experience of docker, you might want to refer to the [docker d
 `docker build -f Dockerfile -t <image-name> .`
 
 ### run training
-`docker run -v <absolute-path-of-local-dir>:/usr/src/diabetes -t -d --rm --name diabetes-train  diabetes python ./train.py --dataset diabetes.csv --n_trials 100`
+`docker run -v <absolute-path-of-local-dir>:/diabetes -t -d --rm --name diabetes-train  diabetes python diabetes/train.py --dataset diabetes.csv --n_trials 100`
 
 ### run inference
-`docker run -v <absolute-path-of-local-dir>:/usr/src/diabetes -it --rm --name diabetes-inference diabetes python ./inference.py --x test_data.json`
+`docker run -v <absolute-path-of-local-dir>:/diabetes -it --rm --name diabetes-inference diabetes python diabetes/inference.py --x test_data.json`
 
 ### run inference with a specific model
 You may choose one of ['adaboost', 'gradientboost', 'randomforest', 'vclassifier'].\
-`docker run -v <absolute-path-of-local-dir>:/usr/src/diabetes -it --rm --name diabetes-inference diabetes python ./inference.py --x test_data.json --model gradientboost`
+`docker run -v <absolute-path-of-local-dir>:/diabetes -it --rm --name diabetes-inference diabetes python diabetes/inference.py --x test_data.json --model gradientboost`
