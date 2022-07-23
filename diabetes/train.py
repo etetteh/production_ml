@@ -391,7 +391,7 @@ def main(dataset: str = 'diabetes.csv', n_trials: int = 100):
 
 
 if __name__ == "__main__":
-    output_dir = 'outputs/'
+    output_dir = './outputs/'
     os.makedirs(output_dir, exist_ok=True)
 
     global seed

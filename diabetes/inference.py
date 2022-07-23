@@ -17,20 +17,20 @@ def inference(x: json, model: str = None):
         test_data = test_data['instance']
 
     models = {
-        'AdaBoost': './outputs/AdaBoost_model.pkl',
-        'GradientBoosting': './outputs/GradientBoosting_model.pkl',
-        'Random Forest': './outputs/RandomForest_model.pkl',
-        'Voting Classifier': './outputs/votingClassifier_model.pkl'
+        'AdaBoost': 'outputs/AdaBoost_model.pkl',
+        'GradientBoosting': 'outputs/GradientBoosting_model.pkl',
+        'Random Forest': 'outputs/RandomForest_model.pkl',
+        'Voting Classifier': 'outputs/votingClassifier_model.pkl'
     }
 
     if model == 'adaboost':
-        models = {'AdaBoost': './outputs/AdaBoost_model.pkl'}
+        models = {'AdaBoost': 'outputs/AdaBoost_model.pkl'}
     if model == 'gradientboost':
-        models = {'GradientBoosting': './outputs/GradientBoosting_model.pkl'}
+        models = {'GradientBoosting': 'outputs/GradientBoosting_model.pkl'}
     if model == 'randomforest':
-        models = {'Random Forest': './outputs/RandomForest_model.pkl'}
+        models = {'Random Forest': 'outputs/RandomForest_model.pkl'}
     if model == 'vclassifier':
-        models = {'Voting Classifier': './outputs/votingClassifier_model.pkl'}
+        models = {'Voting Classifier': 'outputs/votingClassifier_model.pkl'}
 
     for cls_name, saved_model in models.items():
         model = joblib.load(saved_model)
@@ -51,7 +51,7 @@ if __name__ == "__main__":
     formatter = logging.Formatter(fmt='%(asctime)s: %(message)s', datefmt='%d-%b-%y %H:%M:%S')
 
     # file handler
-    file_handler = logging.FileHandler('./outputs/inference.log')
+    file_handler = logging.FileHandler('outputs/inference.log')
     file_handler.setFormatter(formatter)
 
     # stream handler
