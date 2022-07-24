@@ -13,26 +13,24 @@ from sklearn.compose import ColumnTransformer
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.ensemble import AdaBoostClassifier, GradientBoostingClassifier, RandomForestClassifier, VotingClassifier
-from sklearn.metrics import auc, accuracy_score, confusion_matrix, precision_score, \
-    recall_score, roc_auc_score, \
-    roc_curve
+from sklearn.metrics import auc, accuracy_score, confusion_matrix, precision_score, recall_score, roc_auc_score, roc_curve
 
 import plotly.express as px
 
 
-def create_processing_pipeline() -> ColumnTransformer:
+def create_processing_pipeline(numeric_cols: list, categorical_cols: list) -> ColumnTransformer:
     """
     Standardizes the numerical features, and onehot encodes the categorical fields
     Returns:
         data processing pipeline
     """
     # numerical column processor
-    numeric_features = slice(0, 7)
+    numeric_features = numeric_cols
     numeric_transformer = Pipeline(steps=[
         ('scaler', StandardScaler())])
 
     # categorical column processor
-    categorical_features = slice(7, 8)
+    categorical_features = categorical_cols
     categorical_transformer = Pipeline(steps=[
         ('onehot', OneHotEncoder(handle_unknown='ignore'))])
 
@@ -166,25 +164,27 @@ class Objective(object):
     Objective for running hyperparameter tuning for each classifier
 
     Args:
-        data: a pandas.DataFrame file
+        dataset: a pandas.DataFrame file
         classifier: the name of the classifier whose hparams are to be tuned (e.g. RandomForest, GradientBoosting etc.)
+        dataset_attr: features and label names and their indexes
     """
 
-    def __init__(self, data, classifier, features):
-        self.data = data
+    def __init__(self, dataset: pd.DataFrame, dataset_attr: dict, classifier: str):
+        self.dataset = dataset
         self.classifier = classifier
-        self.features = features
+        self.dataset_attr = dataset_attr
+
 
     def __call__(self, trial):
-        # get features and labels
-        label = 'Diabetic'
-        x, y = self.data[self.features].values, self.data[label].values
+        features, label, numeric_cols, categorical_cols = self.dataset_attr["features"], self.dataset_attr["label"], self.dataset_attr["numeric_cols"], self.dataset_attr["categorical_cols"]
+
+        x, y = self.dataset[features].values, self.dataset[label].values
 
         # split data into train set and test set
         x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.20, random_state=trial.suggest_int('data_random_state', 0, 99,
-                                                                                           step=1))
+                                                                                                                 step=1))
 
-        preprocessor = create_processing_pipeline()
+        preprocessor = create_processing_pipeline(numeric_cols, categorical_cols)
         pipeline = None
 
         if self.classifier == 'RandomForest':
@@ -227,23 +227,23 @@ class Objective(object):
         return auc_
 
 
-def train_base_classifiers(dataset: pd.DataFrame, features: list, classifiers: dict, output_dir: str) -> dict:
+def train_base_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifiers: dict, output_dir: str) -> dict:
     """
     Fits a classifier on the given dataframe.
 
     Args:
         dataset: pandas dataframe
-        features: a list of feature names
+        dataset_attr: features and label names and their indexes
         classifiers: dict of base classifiers with dataset split random seed
         output_dir: directory to save model results, and figures
     Returns:
         dict of performance metrics
     """
     # Separate features and labels
-    label = 'Diabetic'
+    features, label, numeric_cols, categorical_cols = dataset_attr["features"], dataset_attr["label"], dataset_attr["numeric_cols"], dataset_attr["categorical_cols"]
     x, y = dataset[features].values, dataset[label].values
 
-    preprocessor = create_processing_pipeline()
+    preprocessor = create_processing_pipeline(numeric_cols, categorical_cols)
 
     results = dict()
     # Create preprocessing and training pipeline
@@ -275,28 +275,28 @@ def train_base_classifiers(dataset: pd.DataFrame, features: list, classifiers: d
     return results
 
 
-def train_voting_classifiers(dataset: pd.DataFrame, features: list, classifiers: dict, base_classifiers_metrics: dict,
+def train_voting_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifiers: dict, base_classifiers_metrics: dict,
                              output_dir: str) -> (dict, Pipeline):
     """
     Fits a voting classifier on the given dataframe, using the best top 2 base classifiers.
 
     Args:
         dataset: pandas dataframe of dataset
-        features: a list of feature names
+        dataset_attr: features and label names and their indexes
         classifiers: dict of base classifiers with dataset split random seed
         base_classifiers_metrics: dict of base classifiers' performance metrics
         output_dir: directory to save model results, and figures
     Returns:
         dict of performance metrics
     """
+    features, label, numeric_cols, categorical_cols = dataset_attr["features"], dataset_attr["label"], dataset_attr["numeric_cols"], dataset_attr["categorical_cols"]
 
-    # Separate features and labels
-    label = 'Diabetic'
+    # Separate features and label
     x, y = dataset[features].values, dataset[label].values
 
     x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.20, random_state=classifiers['AdaBoost']['random_state'])
 
-    preprocessor = create_processing_pipeline()
+    preprocessor = create_processing_pipeline(numeric_cols, categorical_cols)
 
     # get top performing base classifiers using their auc scores
     sorted_dict = dict(sorted(base_classifiers_metrics.items(), key=lambda item: item[1]['auc'], reverse=True))
@@ -330,7 +330,7 @@ def train_voting_classifiers(dataset: pd.DataFrame, features: list, classifiers:
     return metrics, model
 
 
-def main(dataset: str = 'diabetes.csv', n_trials: int = 100):
+def main(dataset: str , col_names: json, n_trials: int = 100):
     """
     1. Runs hparams optimization for base classifiers
     2. trains base classifiers
@@ -338,21 +338,19 @@ def main(dataset: str = 'diabetes.csv', n_trials: int = 100):
 
     Args:
         dataset: csv file to be used
+        col_names: a json file containing feature and label names
         n_trials: number of trials for hparams optimization
     """
-    # create output directory to store results and plots
-    # output_dir = 'outputs/'
-    # os.makedirs(output_dir, exist_ok=True)
-
     dataset = pd.read_csv(dataset)
-    features = ['Pregnancies', 'PlasmaGlucose', 'DiastolicBloodPressure', 'TricepsThickness', 'SerumInsulin', 'BMI',
-                'DiabetesPedigree', 'Age']
+
+    with open(col_names, 'r') as f:
+        dataset_attr = json.load(f)
 
     # tune hparams
     tuned_hparams = dict()
     classifier_names = ['AdaBoost', 'GradientBoosting', 'RandomForest']
     for classifier in classifier_names:
-        objective = Objective(dataset, classifier, features)
+        objective = Objective(dataset=dataset, dataset_attr=dataset_attr, classifier=classifier)
 
         study = optuna.create_study(direction='maximize')
         study.optimize(objective, n_trials=n_trials)
@@ -379,9 +377,9 @@ def main(dataset: str = 'diabetes.csv', n_trials: int = 100):
     }
 
     # train classifiers and a voting classifiers
-    base_classifiers_metrics = train_base_classifiers(dataset=dataset, features=features, classifiers=classifiers,
+    base_classifiers_metrics = train_base_classifiers(dataset=dataset, dataset_attr=dataset_attr, classifiers=classifiers,
                                                       output_dir=output_dir)
-    voting_classifier_metrics, model = train_voting_classifiers(dataset=dataset, features=features,
+    voting_classifier_metrics, model = train_voting_classifiers(dataset=dataset, dataset_attr=dataset_attr,
                                                                 classifiers=classifiers,
                                                                 base_classifiers_metrics=base_classifiers_metrics,
                                                                 output_dir=output_dir)
@@ -394,10 +392,6 @@ if __name__ == "__main__":
     output_dir = './outputs/'
     os.makedirs(output_dir, exist_ok=True)
 
-    global seed
-    seed = 1
-
-    # logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(message)s', datefmt='%d-%b-%y %H:%M:%S')
     logger = logging.getLogger()
     logger.setLevel(logging.INFO)
 
