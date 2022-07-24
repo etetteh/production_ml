@@ -6,13 +6,13 @@ import logging
 import numpy as np
 
 
-def inference(x: json, model: str = None):
+def inference(test_data: json, model: str = None):
     """
     Args:
         model: name of the inference model to use
-        x: diabetes instance to be classified
+        test_data: diabetes instance to be classified
     """
-    with open(x, 'r') as f:
+    with open(test_data, 'r') as f:
         test_data = json.load(f)
         test_data = test_data['instance']
 
