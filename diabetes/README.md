@@ -1,5 +1,5 @@
 # Diabetes Classification
-In this project, we train an AdaBoost, Gradient Boosting, and Random Forest classifiers from the Scikit-Learn machine learning library,
+In this project, we train an AdaBoost, Gradient Boosting, and Random Forest classifiers from the [scikit-learn](https://scikit-learn.org/stable/) machine learning library, and additional train an XGBoost and CatBoost classifiers from [xgboost](https://xgboost.readthedocs.io) and [catboost](https://catboost.ai) respectively,  
 on a diabetes dataset, to classify whether a patient has diabetes or not.
 
 ## Stand alone Implementation
@@ -7,6 +7,7 @@ on a diabetes dataset, to classify whether a patient has diabetes or not.
 ```
 pip install -r requirements.txt
 ```
+In case of issues regarding the installation of any of the library, refer to its documentation.
 
 ### training
 1. Initial step involves hyper-parameter optimization for each of the classifier used.
@@ -31,7 +32,7 @@ python train.py --dataset diabetes.csv --col_names columns.json --n_trials 100
 
 ### inference
 The default mode of inference.py runs inference using all the classifiers. However, users can pass a specific classifier to use.\
-Users can choose one of the following models: adaboost, gradientboost, randomforest, vclassifier.\
+Users can choose one of the following models: adaboost, gradientboost, randomforest, xgboost, catboost, vclassifier.\
 The inference data must be in a json format.
 
 Example: running inference with all classifiers\
@@ -64,7 +65,7 @@ docker run -v <absolute-path-of-local-dir>:/diabetes -it --rm --name diabetes-in
 ```
 
 ### Perform inference with a specific model
-You may choose one of ['adaboost', 'gradientboost', 'randomforest', 'vclassifier'].\
+You may choose one of ['adaboost', 'gradientboost', 'randomforest', 'xgboost', 'catboost', 'vclassifier'].\
 ```
 docker run -v <absolute-path-of-local-dir>:/diabetes -it --rm --name diabetes-inference diabetes python diabetes/inference.py --test_data test_data.json --model gradientboost
 ```
