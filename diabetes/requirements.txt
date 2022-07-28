@@ -1,5 +1,7 @@
 pip
 scikit-learn
+xgboost
+catboost
 pandas
 numpy
 fire
