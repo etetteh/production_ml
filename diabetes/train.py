@@ -14,6 +14,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler, OneHotEncoder
 from sklearn.ensemble import AdaBoostClassifier, GradientBoostingClassifier, RandomForestClassifier, VotingClassifier
 from sklearn.metrics import auc, accuracy_score, confusion_matrix, precision_score, recall_score, roc_auc_score, roc_curve
+from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 
 import plotly.express as px
 
@@ -58,7 +60,7 @@ def get_classifier_params(hparams: dict, classifier_name: str) -> dict:
     return params, data_random_state
 
 
-def compute_metrics(model: Pipeline, x_test: np.ndarray, y_test: np.ndarray) -> (np.ndarray, dict):
+def compute_metrics(model: Pipeline, X_test: np.ndarray, y_test: np.ndarray) -> (np.ndarray, dict):
     """
     Computes model performance metrics on test data split.
     Specifically, it computes the `confusion matrix`, `accuracy`, `precision`, `recall`,
@@ -67,7 +69,7 @@ def compute_metrics(model: Pipeline, x_test: np.ndarray, y_test: np.ndarray) -> 
 
     Args:
         model: classification model pipeline
-        x_test: ndarray of train labels
+        X_test: ndarray of train labels
         y_test: ndarray of test labels
 
     Returns:
@@ -75,8 +77,8 @@ def compute_metrics(model: Pipeline, x_test: np.ndarray, y_test: np.ndarray) -> 
         metrics: computed performance metrics
     """
     # get predictions from test data
-    predictions = model.predict(x_test)
-    y_scores = model.predict_proba(x_test)
+    predictions = model.predict(X_test)
+    y_scores = model.predict_proba(X_test)
 
     # compute performance metrics
     cm = confusion_matrix(y_test, predictions)
@@ -178,10 +180,10 @@ class Objective(object):
     def __call__(self, trial):
         features, label, numeric_cols, categorical_cols = self.dataset_attr["features"], self.dataset_attr["label"], self.dataset_attr["numeric_cols"], self.dataset_attr["categorical_cols"]
 
-        x, y = self.dataset[features].values, self.dataset[label].values
+        X, y = self.dataset[features].values, self.dataset[label].values
 
         # split data into train set and test set
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.20, random_state=trial.suggest_int('data_random_state', 0, 99,
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, stratify=y, random_state=trial.suggest_int('data_random_state', 0, 99,
                                                                                                                  step=1))
 
         preprocessor = create_processing_pipeline(numeric_cols, categorical_cols)
@@ -189,6 +191,9 @@ class Objective(object):
 
         if self.classifier == 'RandomForest':
             params = {
+                'criterion': trial.suggest_categorical('criterion', ['gini', 'entropy', 'log_loss']),
+                'class_weight': trial.suggest_categorical('class_weight', ['balanced', 'balanced_subsample', None]),
+                'max_depth': trial.suggest_int('max_depth', 2, 32, log=True),
                 'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2']),
                 'n_estimators': trial.suggest_int('n_estimators', 10, 100, step=1),
                 'random_state': trial.suggest_int('random_state', 0, 99, step=1),
@@ -199,6 +204,7 @@ class Objective(object):
                                 )
         elif self.classifier == 'AdaBoost':
             params = {
+                'learning_rate': trial.suggest_float('learning_rate', 1e-4, 1.0, log=True),
                 'n_estimators': trial.suggest_int('n_estimators', 10, 100, step=1),
                 'algorithm': trial.suggest_categorical('algorithm', ['SAMME', 'SAMME.R']),
                 'random_state': trial.suggest_int('random_state', 0, 99, step=1),
@@ -209,8 +215,11 @@ class Objective(object):
                                 )
         elif self.classifier == 'GradientBoosting':
             params = {
+                'learning_rate': trial.suggest_float('learning_rate', 1e-4, 1.0, log=True),
                 'loss': trial.suggest_categorical('loss', ['log_loss', 'exponential']),
                 'n_estimators': trial.suggest_int('n_estimators', 10, 100, step=1),
+                'max_depth': trial.suggest_int('max_depth', 2, 32, log=True),
+                'max_features': trial.suggest_categorical('max_features', ['sqrt', 'log2']),
                 'criterion': trial.suggest_categorical('criterion', ['friedman_mse', 'squared_error']),
                 'random_state': trial.suggest_int('random_state', 0, 99, step=1),
             }
@@ -218,9 +227,56 @@ class Objective(object):
             pipeline = Pipeline(steps=[('preprocessor', preprocessor),
                                        ('gradient_boosting', GradientBoostingClassifier(**params))]
                                 )
+        elif self.classifier == 'XGBClassifier':
+            params = {
+                'use_label_encoder': False,
+                'verbosity': 0,
+                'silent':True,
+                'n_estimators': trial.suggest_int('n_estimators', 10, 100, step=1),
+                'booster': trial.suggest_categorical('booster', ['gbtree', 'gblinear', 'dart']),
+                'random_state': trial.suggest_int('random_state', 0, 99, step=1),
+                'lambda': trial.suggest_float('lambda', 1e-8, 1.0, log=True),
+                'alpha': trial.suggest_float('alpha', 1e-8, 1.0, log=True),
+                'subsample': trial.suggest_float('subsample', 0.2, 1.0),
+                'colsample_bytree': trial.suggest_float('colsample_bytree', 0.2, 1.0),
+            }
 
-        model = pipeline.fit(x_train, y_train)
-        y_scores = model.predict_proba(x_test)
+            if params['booster'] in ['gbtree', 'dart']:
+                params['max_depth'] = trial.suggest_int('max_depth', 3, 9, step=2)
+                params['min_child_weight'] = trial.suggest_int('min_child_weight', 2, 10)
+                params['eta'] = trial.suggest_float('eta', 1e-8, 1.0, log=True)
+                params['gamma'] = trial.suggest_float('gamma', 1e-8, 1.0, log=True)
+                params['grow_policy'] = trial.suggest_categorical('grow_policy', ['depthwise', 'lossguide'])
+
+            if params['booster'] == 'dart':
+                params['sample_type'] = trial.suggest_categorical('sample_type', ['uniform', 'weighted'])
+                params['normalize_type'] = trial.suggest_categorical('normalize_type', ['tree', 'forest'])
+                params['rate_drop'] = trial.suggest_float('rate_drop', 1e-8, 1.0, log=True)
+                params['skip_drop'] = trial.suggest_float('skip_drop', 1e-8, 1.0, log=True)
+            # Create preprocessing and training pipeline
+            pipeline = Pipeline(steps=[('preprocessor', preprocessor),
+                                       ('xgb_classifier', XGBClassifier(**params))]
+                                )
+        elif self.classifier == 'CatboostClassifier':
+            params = {
+                'verbose': 0,
+                'objective': trial.suggest_categorical('objective', ['Logloss', 'CrossEntropy']),
+                'colsample_bylevel': trial.suggest_float('colsample_bylevel', 0.01, 0.1),
+                'depth': trial.suggest_int('depth', 1, 12),
+                'boosting_type': trial.suggest_categorical('boosting_type', ['Ordered', 'Plain']),
+                'bootstrap_type': trial.suggest_categorical('bootstrap_type', ['Bayesian', 'Bernoulli', 'MVS']),
+                'random_state': trial.suggest_int('random_state', 0, 99, step=1),
+            }
+            if params['bootstrap_type'] == 'Bayesian':
+                params['bagging_temperature'] = trial.suggest_float('bagging_temperature', 0, 10)
+            elif params['bootstrap_type'] == 'Bernoulli':
+                params['subsample'] = trial.suggest_float('subsample', 0.1, 1)
+            pipeline = Pipeline(steps=[('preprocessor', preprocessor),
+                                       ('xgb_classifier', CatBoostClassifier(**params))]
+                                )
+
+        model = pipeline.fit(X_train, y_train)
+        y_scores = model.predict_proba(X_test)
 
         auc_ = roc_auc_score(y_test, y_scores[:, 1])
 
@@ -241,14 +297,14 @@ def train_base_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifier
     """
     # Separate features and labels
     features, label, numeric_cols, categorical_cols = dataset_attr["features"], dataset_attr["label"], dataset_attr["numeric_cols"], dataset_attr["categorical_cols"]
-    x, y = dataset[features].values, dataset[label].values
+    X, y = dataset[features].values, dataset[label].values
 
     preprocessor = create_processing_pipeline(numeric_cols, categorical_cols)
 
     results = dict()
     # Create preprocessing and training pipeline
     for classifier_name, classifier_attr in classifiers.items():
-        x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.20, random_state=classifier_attr['random_state'])
+        X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, stratify=y, random_state=classifier_attr['random_state'])
         pipeline = Pipeline(steps=[
             ('preprocessor', preprocessor),
             (classifier_name, classifier_attr['classifier'])
@@ -256,10 +312,10 @@ def train_base_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifier
         )
 
         # fit the pipeline to train a random forest model on the training set
-        model = pipeline.fit(x_train, y_train)
+        model = pipeline.fit(X_train, y_train)
 
         # compute performance metrics
-        y_scores, metrics = compute_metrics(model, x_test, y_test)
+        y_scores, metrics = compute_metrics(model, X_test, y_test)
 
         # save model performance metrics
         results[classifier_name] = metrics
@@ -275,16 +331,14 @@ def train_base_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifier
     return results
 
 
-def train_voting_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifiers: dict, base_classifiers_metrics: dict,
-                             output_dir: str) -> (dict, Pipeline):
+def train_voting_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifiers: dict, output_dir: str) -> (dict, Pipeline):
     """
-    Fits a voting classifier on the given dataframe, using the best top 2 base classifiers.
+    Fits a voting classifier on the given dataframe.
 
     Args:
         dataset: pandas dataframe of dataset
         dataset_attr: features and label names and their indexes
         classifiers: dict of base classifiers with dataset split random seed
-        base_classifiers_metrics: dict of base classifiers' performance metrics
         output_dir: directory to save model results, and figures
     Returns:
         dict of performance metrics
@@ -292,31 +346,29 @@ def train_voting_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifi
     features, label, numeric_cols, categorical_cols = dataset_attr["features"], dataset_attr["label"], dataset_attr["numeric_cols"], dataset_attr["categorical_cols"]
 
     # Separate features and label
-    x, y = dataset[features].values, dataset[label].values
+    X, y = dataset[features].values, dataset[label].values
 
-    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size=0.20, random_state=classifiers['AdaBoost']['random_state'])
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.20, random_state=classifiers['AdaBoost']['random_state'], stratify=y)
 
     preprocessor = create_processing_pipeline(numeric_cols, categorical_cols)
 
-    # get top performing base classifiers using their auc scores
-    sorted_dict = dict(sorted(base_classifiers_metrics.items(), key=lambda item: item[1]['auc'], reverse=True))
-    sorted_dict_keys = list(sorted_dict.keys())
-    top2_classifiers = sorted_dict_keys[:int(np.ceil(len(sorted_dict_keys) * 0.5))]
+    top_classifiers = ['CatboostClassifier', 'XGBClassifier', 'GradientBoosting']
 
     pipeline = Pipeline(steps=[('preprocessor', preprocessor),
                                ('voting_classifier', VotingClassifier(estimators=[
                                    (cls_name, cls['classifier']) for cls_name, cls in classifiers.items() if
-                                   cls_name in top2_classifiers],
+                                   cls_name in top_classifiers],
                                    voting='soft',
-                                   weights=[5, 1]))
+                                   # weights=[5, 1]
+                               ))
                                ]
                         )
 
     # fit the pipeline to train a random forest model on the training set
-    model = pipeline.fit(x_train, y_train)
+    model = pipeline.fit(X_train, y_train)
 
     # compute performance metrics
-    y_scores, metrics = compute_metrics(model, x_test, y_test)
+    y_scores, metrics = compute_metrics(model, X_test, y_test)
 
     # plot classifier ROC curve
     plot_roc_curve(y_test, y_scores, output_dir, 'Voting Classifier')
@@ -330,7 +382,7 @@ def train_voting_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifi
     return metrics, model
 
 
-def main(dataset: str , col_names: json, n_trials: int = 100):
+def main(dataset: str , col_names: json, n_trials: int = 200):
     """
     1. Runs hparams optimization for base classifiers
     2. trains base classifiers
@@ -346,10 +398,22 @@ def main(dataset: str , col_names: json, n_trials: int = 100):
     with open(col_names, 'r') as f:
         dataset_attr = json.load(f)
 
+    X, y = dataset[dataset_attr['features']].values, dataset[dataset_attr['label']].values
+
+    X_train, X_test, _, _ = train_test_split(X, y, test_size=0.20, stratify=y)
+
+    # log dataset info
+    logger.info(f"Dataset feature columns: {dataset_attr['features']}")
+    logger.info(f"Dataset label column: {dataset_attr['label']}")
+    logger.info(f"Shape of training dataset: {X_train.shape}")
+    logger.info(f"Shape of test dataset: {X_test.shape}")
+
+    logger.info(f"Number of hyperparameter tuning trials: {n_trials}")
+
     # tune hparams
     tuned_hparams = dict()
-    classifier_names = ['AdaBoost', 'GradientBoosting', 'RandomForest']
-    for classifier in classifier_names:
+    classifier_names = {'ada': 'AdaBoost', 'gb': 'GradientBoosting', 'rf': 'RandomForest', 'xgb': 'XGBClassifier', 'catb': 'CatboostClassifier'}
+    for classifier in classifier_names.values():
         objective = Objective(dataset=dataset, dataset_attr=dataset_attr, classifier=classifier)
 
         study = optuna.create_study(direction='maximize')
@@ -361,19 +425,31 @@ def main(dataset: str , col_names: json, n_trials: int = 100):
         print()
 
     # get tuned hparams
-    ada_boost_params, ada_boost_data_random_state = get_classifier_params(tuned_hparams, classifier_names[0])
-    gradient_boosting_params, gradient_boosting_data_random_state = get_classifier_params(tuned_hparams, classifier_names[1])
-    random_forest_params, random_forest_data_random_state = get_classifier_params(tuned_hparams, classifier_names[2])
+    ada_boost_params, ada_boost_data_random_state = get_classifier_params(tuned_hparams, classifier_names['ada'])
+    gradient_boosting_params, gradient_boosting_data_random_state = get_classifier_params(tuned_hparams, classifier_names['gb'])
+    random_forest_params, random_forest_data_random_state = get_classifier_params(tuned_hparams, classifier_names['rf'])
+    xgb_classifier_params, xgb_classifier_data_random_state = get_classifier_params(tuned_hparams, classifier_names['xgb'])
+    catb_classifier_params, catb_classifier_data_random_state = get_classifier_params(tuned_hparams, classifier_names['catb'])
 
     # load tuned hparams into their respective classifiers
-    classifiers_keys = ['classifier', 'random_state']
+    xgb_classifier_params['use_label_encoder'] = False
+    xgb_classifier_params['verbosity'] = 0
+    xgb_classifier_params['silent'] = True
+
+    catb_classifier_params['verbose'] = 0
+
+    classifiers_keys = {'cls': 'classifier', 'rands': 'random_state'}
     classifiers = {
-        classifier_names[0]: {classifiers_keys[0]: AdaBoostClassifier(**ada_boost_params),
-                              classifiers_keys[1]: ada_boost_data_random_state},
-        classifier_names[1]: {classifiers_keys[0]: GradientBoostingClassifier(**gradient_boosting_params),
-                              classifiers_keys[1]: gradient_boosting_data_random_state},
-        classifier_names[2]: {classifiers_keys[0]: RandomForestClassifier(**random_forest_params),
-                              classifiers_keys[1]: random_forest_data_random_state}
+        classifier_names['ada']: {classifiers_keys['cls']: AdaBoostClassifier(**ada_boost_params),
+                                  classifiers_keys['rands']: ada_boost_data_random_state},
+        classifier_names['gb']: {classifiers_keys['cls']: GradientBoostingClassifier(**gradient_boosting_params),
+                                 classifiers_keys['rands']: gradient_boosting_data_random_state},
+        classifier_names['rf']: {classifiers_keys['cls']: RandomForestClassifier(**random_forest_params),
+                                 classifiers_keys['rands']: random_forest_data_random_state},
+        classifier_names['xgb']: {classifiers_keys['cls']: XGBClassifier(**xgb_classifier_params),
+                                  classifiers_keys['rands']: xgb_classifier_data_random_state},
+        classifier_names['catb']: {classifiers_keys['cls']: CatBoostClassifier(**catb_classifier_params),
+                                   classifiers_keys['rands']: catb_classifier_data_random_state}
     }
 
     # train classifiers and a voting classifiers
@@ -381,7 +457,6 @@ def main(dataset: str , col_names: json, n_trials: int = 100):
                                                       output_dir=output_dir)
     voting_classifier_metrics, model = train_voting_classifiers(dataset=dataset, dataset_attr=dataset_attr,
                                                                 classifiers=classifiers,
-                                                                base_classifiers_metrics=base_classifiers_metrics,
                                                                 output_dir=output_dir)
 
     # save model and performance metrics
@@ -392,14 +467,14 @@ if __name__ == "__main__":
     output_dir = './outputs/'
     os.makedirs(output_dir, exist_ok=True)
 
-    logger = logging.getLogger()
+    logger = logging.getLogger('Diabetes Classification: Training...')
     logger.setLevel(logging.INFO)
 
     # formatter
     formatter = logging.Formatter(fmt='%(asctime)s: %(message)s', datefmt='%d-%b-%y %H:%M:%S')
 
     # file handler
-    file_handler = logging.FileHandler(output_dir+'diabetes.log')
+    file_handler = logging.FileHandler(output_dir+'diabetes.log', mode='w')
     file_handler.setFormatter(formatter)
 
     # stream handler
@@ -408,5 +483,7 @@ if __name__ == "__main__":
 
     logger.addHandler(file_handler)
     logger.addHandler(console_handler)
+
+    logger.info(f"Tuned hyperparameters, performance metrics, plots, and logs are saved in {output_dir}")
 
     fire.Fire(main)

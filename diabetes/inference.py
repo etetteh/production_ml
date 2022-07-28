@@ -18,8 +18,10 @@ def inference(test_data: json, model: str = None):
 
     models = {
         'AdaBoost': 'outputs/AdaBoost_model.pkl',
-        'GradientBoosting': 'outputs/GradientBoosting_model.pkl',
-        'Random Forest': 'outputs/RandomForest_model.pkl',
+        'GradientBoosting Classifier': 'outputs/GradientBoosting_model.pkl',
+        'Random Forest Classifier': 'outputs/RandomForest_model.pkl',
+        'XGBoost Classifier': 'outputs/XGBClassifier_model.pkl',
+        'Catboost Classifier': 'outputs/CatboostClassifier_model.pkl',
         'Voting Classifier': 'outputs/votingClassifier_model.pkl'
     }
 
@@ -29,6 +31,10 @@ def inference(test_data: json, model: str = None):
         models = {'GradientBoosting': 'outputs/GradientBoosting_model.pkl'}
     if model == 'randomforest':
         models = {'Random Forest': 'outputs/RandomForest_model.pkl'}
+    if model == 'xgboost':
+        models = {'XGBoost Classifier': 'outputs/XGBClassifier_model.pkl'}
+    if model == 'catboost':
+        models = {'Catboost Classifier': 'outputs/CatboostClassifier_model.pkl'}
     if model == 'vclassifier':
         models = {'Voting Classifier': 'outputs/votingClassifier_model.pkl'}
 
@@ -44,14 +50,14 @@ def inference(test_data: json, model: str = None):
 
 
 if __name__ == "__main__":
-    logger = logging.getLogger()
+    logger = logging.getLogger('Diabetes Classification: Inference...')
     logger.setLevel(logging.INFO)
 
     # formatter
     formatter = logging.Formatter(fmt='%(asctime)s: %(message)s', datefmt='%d-%b-%y %H:%M:%S')
 
     # file handler
-    file_handler = logging.FileHandler('outputs/inference.log')
+    file_handler = logging.FileHandler('outputs/inference.log', mode='w')
     file_handler.setFormatter(formatter)
 
     # stream handler
