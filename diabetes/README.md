@@ -49,6 +49,9 @@ python inference.py --test_data test_data.json --model gradientboost
 ## Docker Implementation
 For users with no experience of docker, you might want to refer to the [docker documentation](https://docs.docker.com/get-started/overview/).
 
+**NOTE:** CatBoost currently requires 64-bit version of Python, so you might have to change the `Dockerfile` to use `From amd64/python:3.9.13-slim`.
+Also, `plotly` and `kaleido` don't currently work when using `amd64/...`, so you might have to comment out the plot function and calls.
+
 ### Build image
 ```
 docker build -f Dockerfile -t <image-name> .
