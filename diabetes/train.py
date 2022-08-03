@@ -28,19 +28,27 @@ def create_processing_pipeline(numeric_cols: list, categorical_cols: list) -> Co
     """
     # numerical column processor
     numeric_features = numeric_cols
-    numeric_transformer = Pipeline(steps=[
-        ('scaler', StandardScaler())])
+    numeric_transformer = Pipeline(
+        steps=[
+            ('scaler', StandardScaler())
+        ]
+    )
 
     # categorical column processor
     categorical_features = categorical_cols
-    categorical_transformer = Pipeline(steps=[
-        ('onehot', OneHotEncoder(handle_unknown='ignore'))])
+    categorical_transformer = Pipeline(
+        steps=[
+            ('onehot', OneHotEncoder(handle_unknown='ignore'))
+        ]
+    )
 
     # combined processor
     preprocessor = ColumnTransformer(
         transformers=[
             ('numeric_transformer', numeric_transformer, numeric_features),
-            ('categorical_transformer', categorical_transformer, categorical_features)])
+            ('categorical_transformer', categorical_transformer, categorical_features)
+        ]
+    )
 
     return preprocessor
 
@@ -130,8 +138,8 @@ def plot_roc_curve(y_test: np.ndarray, y_scores: np.ndarray, output_dir: str, cl
         margin=dict(l=10, r=15, t=40, b=30)
     )
     # save plots as .png and .html files
-    fig.write_html(output_dir + title + '.html')
-    fig.write_image(output_dir + title + '.png')
+    fig.write_html(f"{output_dir}/{title}.html")
+    fig.write_image(f"{output_dir}/{title}.png")
     # fig.show()
 
 
@@ -148,13 +156,13 @@ def save_results(model: Pipeline, metrics: dict, output_dir: str, filename: str)
     """
 
     # pickle model
-    classifier_filename = filename + '_model.pkl'
-    joblib.dump(model, output_dir + classifier_filename)
+    classifier_filename = f"{filename}_model.pkl"
+    joblib.dump(model, f"{output_dir}/{classifier_filename}")
 
     # save metrics
-    classifier_metrics_filename = filename + '_metrics.json'
+    classifier_metrics_filename = f"{filename}_metrics.json"
     metrics.pop('confusion_matrix')
-    with open(output_dir + classifier_metrics_filename, 'w', encoding='utf-8') as f:
+    with open(f"{output_dir}/{classifier_metrics_filename}", 'w', encoding='utf-8') as f:
         json.dump(metrics, f, ensure_ascii=False, indent=4)
 
     logger.info(f"Saved {filename} classifier as: {classifier_filename}")
@@ -352,15 +360,14 @@ def train_voting_classifiers(dataset: pd.DataFrame, dataset_attr: dict, classifi
 
     preprocessor = create_processing_pipeline(numeric_cols, categorical_cols)
 
-    top_classifiers = ['CatboostClassifier', 'XGBClassifier', 'GradientBoosting']
+    voting_base_classifiers = ['CatboostClassifier', 'XGBClassifier', 'GradientBoosting']
 
     pipeline = Pipeline(steps=[('preprocessor', preprocessor),
                                ('voting_classifier', VotingClassifier(estimators=[
                                    (cls_name, cls['classifier']) for cls_name, cls in classifiers.items() if
-                                   cls_name in top_classifiers],
-                                   voting='soft',
-                                   # weights=[5, 1]
-                               ))
+                                   cls_name in voting_base_classifiers],
+                                   voting='soft')
+                                )
                                ]
                         )
 
@@ -464,7 +471,7 @@ def main(dataset: str , col_names: json, n_trials: int = 200):
 
 
 if __name__ == "__main__":
-    output_dir = './outputs/'
+    output_dir = './outputs'
     os.makedirs(output_dir, exist_ok=True)
 
     logger = logging.getLogger('Diabetes Classification: Training...')
@@ -474,7 +481,7 @@ if __name__ == "__main__":
     formatter = logging.Formatter(fmt='%(asctime)s: %(message)s', datefmt='%d-%b-%y %H:%M:%S')
 
     # file handler
-    file_handler = logging.FileHandler(output_dir+'diabetes.log', mode='w')
+    file_handler = logging.FileHandler(f"{output_dir}/diabetes.log", mode='w')
     file_handler.setFormatter(formatter)
 
     # stream handler
